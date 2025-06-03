@@ -101,7 +101,7 @@ def process_ai_response_and_update_history(response_text):
     parsed_output = extract_and_parse_json(response_text)
     
     if parsed_output is None:
-        st.error("AIからの応答がJSON形式ではありませんでした。")
+        # st.error("AIからの応答がJSON形式ではありませんでした。")
         st.session_state.display_choices = False # 選択肢は表示しない
         return
 
