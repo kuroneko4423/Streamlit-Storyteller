@@ -256,12 +256,13 @@ def main():
                 # AI応答がNoneの場合（APIエラーなど）
                 st.session_state.display_choices = False # 選択肢は表示しない
             
-            if st.session_state.ending:
-                st.session_state.title = True
-                prompt = config['prompt']['title_prompt']
-                prompt = prompt.replace("｛物語の内容｝", st.session_state.story)
-                response_text = generate_response(prompt)
-                process_ai_response_and_update_history(response_text)
+            with st.spinner('考え中...'):
+                if st.session_state.ending:
+                    st.session_state.title = True
+                    prompt = config['prompt']['title_prompt']
+                    prompt = prompt.replace("｛物語の内容｝", st.session_state.story)
+                    response_text = generate_response(prompt)
+                    process_ai_response_and_update_history(response_text)
 
             st.session_state.waiting_for_ai_response = False # AI応答待ちフラグをリセット
             st.rerun() # AI応答が表示されたら再度実行してUIを更新 (ここで選択肢も描画される)
