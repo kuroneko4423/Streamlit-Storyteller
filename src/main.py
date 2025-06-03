@@ -25,6 +25,9 @@ def load_config(config_path='config.yaml'):
         st.error(f"設定ファイルの読み込み中にエラーが発生しました: {e}")
         return None
 
+# 設定の読み込み
+config = load_config()
+
 # Gemini APIの設定
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
@@ -41,7 +44,7 @@ def generate_response(prompt):
         if not response.text.strip():
             st.error("AIからの応答が空でした。")
             return None
-        print(response.text)
+        # print(response.text)
         return response.text
     except Exception as e:
         st.error(f"APIリクエスト中にエラーが発生しました: {e}")
@@ -60,6 +63,13 @@ def check_colon_format(s: str) -> bool:
     else:
         return False
 
+def to_full_width_specific(text):
+    """
+    str.translate() を使って特定の半角文字（コロン）を全角に変換します。
+    """
+    translation_map = str.maketrans(":", "：")
+    return text.translate(translation_map)
+
 def extract_and_parse_json(input_string):
     """
     入力文字列からJSONデータを抽出し、Pythonオブジェクトにパースします。
@@ -68,10 +78,10 @@ def extract_and_parse_json(input_string):
     
     if markdown_match:
         json_to_parse = markdown_match.group(1).strip()
-        print("--- MarkdownコードブロックからJSONを抽出しました ---")
+        # print("--- MarkdownコードブロックからJSONを抽出しました ---")
     else:
         json_to_parse = input_string.strip()
-        print("--- 純粋なJSON文字列として処理します ---")
+        # print("--- 純粋なJSON文字列として処理します ---")
 
     try:
         data = json.loads(json_to_parse)
@@ -104,9 +114,10 @@ def process_ai_response_and_update_history(response_text):
         })
         st.session_state.story += story_content
     else:
-        st.error("AIの応答に「物語」のキーが見つかりませんでした。")
-        st.session_state.display_choices = False
-        return
+        if st.session_state.title == False:
+            st.error("AIの応答に「物語」のキーが見つかりませんでした。")
+            st.session_state.display_choices = False
+            return
 
     # 選択肢部分の処理
     choices_list = parsed_output.get('選択肢')
@@ -124,8 +135,20 @@ def process_ai_response_and_update_history(response_text):
                 'content': '最後の行動を選択してください。'
             })
     else:
-        st.error("AIの応答に有効な「選択肢」のリストが見つかりません。")
+        if st.session_state.ending == False:
+            st.error("AIの応答に有効な「選択肢」のリストが見つかりません。")
         st.session_state.display_choices = False # 選択肢は表示しない
+    
+    if st.session_state.title:
+        title_content = parsed_output.get('title')
+        if title_content:
+            ending_message = config['message']['ending_message']
+            message = ending_message.replace("｛タイトル｝", title_content)
+            st.session_state.messages.append({
+                'role': 'assistant', 
+                'content': message
+            })
+        print(title_content)
 
 def one_in_five_chance() -> bool:
     """
@@ -136,11 +159,10 @@ def one_in_five_chance() -> bool:
     return random.random() < 0.2
 
 def main():
-    st.title('🤖 AIチャットボット')
-    st.write('Gemini APIを使用したインタラクティブチャットボット')
+    st.title('🤖 AIストーリーテラー')
+    st.write('Gemini APIを使用したインタラクティブストーリーテラー')
 
-    # 設定の読み込み
-    config = load_config()
+
     if not config:
         st.stop() # 設定ファイルが読み込めなければアプリを停止
 
@@ -152,10 +174,12 @@ def main():
         st.session_state.waiting_for_ai_response = False
         st.session_state.display_choices = False # 選択肢を表示するかどうかのフラグ
         st.session_state.choices_to_display = [] # 表示する選択肢のリスト
+        st.session_state.ending = False
+        st.session_state.title = False
     
     # 初期メッセージの生成（最初の読み込み時のみ）
     if st.session_state.is_first_load and config:
-        initial_message = config['initial_message']
+        initial_message = config['message']['initial_message']
         st.session_state.messages.append({
             'role': 'assistant', 
             'content': initial_message
@@ -187,7 +211,7 @@ def main():
                 # ストーリーがまだ始まっていない場合 (初回入力時)
                 if not st.session_state.story:
                     if check_colon_format(last_user_message):
-                        prompt = config['prompt']['intro_base_prompt']
+                        prompt = config['prompt']['intro_prompt']
                         parts = last_user_message.split('：')
                         genre = parts[0]
                         theme = parts[1]
@@ -195,7 +219,7 @@ def main():
                         prompt = prompt.replace("｛テーマ｝", theme)
                         response_text = generate_response(prompt)
                     else:
-                        error_message = config['error_message']['input_error01']
+                        error_message = config['message']['error_message']['input_error01']
                         st.markdown(error_message)
                         st.session_state.messages.append({
                             'role': 'assistant', 
@@ -212,12 +236,13 @@ def main():
                     # 注意: 実際のプロンプトはAIの設計に合わせて調整してください
                     if 'climax' not in st.session_state:
                         if one_in_five_chance():
-                            prompt = config['prompt']['climax_base_prompt']
+                            prompt = config['prompt']['climax_prompt']
                             st.session_state.climax = True
                         else:
-                            prompt = config['prompt']['nomal_base_prompt']
+                            prompt = config['prompt']['nomal_prompt']
                     else:
-                        prompt = config['prompt']['end_base_prompt']
+                        prompt = config['prompt']['ending_prompt']
+                        st.session_state.ending = True
                     
                     prompt = prompt.replace("｛これまでのストーリー｝", st.session_state.story)
                     prompt = prompt.replace("｛ユーザーの選択｝", last_user_message)
@@ -230,6 +255,13 @@ def main():
             else:
                 # AI応答がNoneの場合（APIエラーなど）
                 st.session_state.display_choices = False # 選択肢は表示しない
+            
+            if st.session_state.ending:
+                st.session_state.title = True
+                prompt = config['prompt']['title_prompt']
+                prompt = prompt.replace("｛物語の内容｝", st.session_state.story)
+                response_text = generate_response(prompt)
+                process_ai_response_and_update_history(response_text)
 
             st.session_state.waiting_for_ai_response = False # AI応答待ちフラグをリセット
             st.rerun() # AI応答が表示されたら再度実行してUIを更新 (ここで選択肢も描画される)
@@ -256,8 +288,9 @@ def main():
     # AIが応答を生成中の場合は無効にする
     if not st.session_state.waiting_for_ai_response:
         # ユーザー入力。手動で入力された場合のみこのブロックに入る
-        user_input_from_chat_input = st.chat_input('メッセージを入力してください', key="chat_input")
+        user_input_from_chat_input = st.chat_input('メッセージを入力してください', key="chat_input", disabled=st.session_state.ending)
         if user_input_from_chat_input:
+            user_input_from_chat_input = to_full_width_specific(user_input_from_chat_input)
             # 手動で入力されたメッセージを履歴に追加
             st.session_state.messages.append({
                 'role': 'user', 
